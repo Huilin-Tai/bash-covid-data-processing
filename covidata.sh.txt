@@ -1,0 +1,291 @@
+#!/bin/bash
+#huilin tai 260962725
+
+errorMsg()
+{
+	echo "Error:"$@""
+	echo "Script syntax: ./covidata.sh -r procedure id range inputFile outputFile compareFile"
+	echo -e "Legal usage examples: ./covidata.sh get 35 data.csv result.csv\n./covidata.sh -r get 35 2020-01 2020-03 data.csv result.csv\n./covidata.sh compare 10 data.csv result2.csv result.csv\n./covidata.sh -r compare 10 2020-01 2020-03 data.csv result2.csv result.csv"
+exit 1
+}
+
+#5 procedure check
+if [[ $1 == "get" ]]
+then
+	if [[ $# != "4" ]]
+	then 
+		errorMsg Wrong number of arguments
+	fi
+
+elif [[ $1 == "-r" ]]
+then
+	if [[ $2 == "get" ]]
+	then
+		if [[ $# != 7 ]]
+		then
+			errorMsg Wrong number of arguments
+		fi
+	fi
+	if [[ $2 == "compare" ]]
+	then
+		if [[ $# != 8 ]]
+		then
+			errorMsg Wrong number of arguments
+		fi
+	fi
+elif [[ $1 == "compare" ]]
+then
+	if [[ $# != 5 ]]
+	then
+		errorMsg Wrong number of arguments
+	fi
+else
+	errorMsg Procedure not provided
+fi
+#5
+if [[ $1 == "get" ]]
+then 
+	if [[ -f $3 ]]
+	then	
+		awk -v p="$2" '
+		BEGIN { FS="," ;rowcount=0;avgconf=0;avgdeaths=0;avgtests=0 }
+	       	{ if ($1 ~ p) { rowcount=rowcount+1;avgconf=avgconf+$6;avgdeaths=avgdeaths+$8;avgtests=avgtests+$11;print $0 } }
+	       	END { OFS=","; print "rowcount","avgconf","avgdeaths","avgtests\n"rowcount, avgconf/rowcount, avgdeaths/rowcount, avgtests/rowcount } ' < $3 > $4  
+	else
+		errorMsg  Input file name does not exist
+	fi
+fi
+#6
+if [[ $1 == "compare" ]]
+then
+        if [[ -f $3 ]]
+        then
+                awk -v p="$2" '
+		BEGIN { FS="," ;rowcount=0;avgconf=0;avgdeaths=0;avgtests=0 }
+                { if ($1 ~ p) { rowcount=rowcount+1;avgconf=avgconf+$6;avgdeaths=avgdeaths+$8;avgtests=avgtests+$11;print $0 } }
+                END { OFS="," } ' < $3 > $4
+	awk '
+	BEGIN { FS="," }
+	{ if ($NF != 4) { print $0 } }
+	END { OFS="," }' < $5 >> $4
+
+		awk -v p="$2" '
+                BEGIN { FS="," ;rowcount=0;avgconf=0;avgdeaths=0;avgtests=0 }
+                { if ($1 ~ p) { rowcount=rowcount+1;avgconf=avgconf+$6;avgdeaths=avgdeaths+$8;avgtests=avgtests+$11 } }
+                END { OFS=","; print "rowcount","avgconf","avgdeaths","avgtests\n"rowcount, avgconf/rowcount, avgdeaths/rowcount, avgtests/rowcount } ' < $3 > tem.csv
+	tail -n 2 "$5" > tem2.csv
+	cat tem.csv >> $4
+	cat tem2.csv >> $4
+	cat tem2.csv >> tem.csv
+	grep -v "rowcount" tem.csv > tem3.csv
+	awk 'NR ==1 { tmp=$1;tmmp=$2;tmmmp=$3;tmmmmp=$4 } NR>1 { OFS="," ; print $1-tmp,$2-tmmp,$3-tmmmp,$4-tmmmmp } ' < tem3.csv > tem.csv
+	echo "diffcount,diffavgconf,diffavgdeath,diffavgtests" >> $4
+	cat tem.csv >> $4
+	rm tem.csv
+	rm tem2.csv
+	rm tem3.csv
+	else errorMsg Input file name does not exist
+	   fi
+   fi	  
+#7
+if [[ $1 == "-r" ]]
+then
+	if [[ $2 == "get" ]]
+	then
+		if [[ -f $6 ]]
+		then	
+		awk -v p="$3" '
+                BEGIN { FS="," ;rowcount=0;avgconf=0;avgdeaths=0;avgtests=0 }
+                { if ($1 ~ p) { rowcount=rowcount+1;avgconf=avgconf+$6;
+			avgdeaths=avgdeaths+$8;avgtests=avgtests+$11;print $0 } }
+		END { OFS="," } ' < $6 > time1.csv
+		t=$4
+		f=$5
+		ymin=${t:0:4}
+		mmin=${t:5:2}
+		ymax=${f:0:4}
+		mmax=${f:5:2}
+	
+		awk -v ymin="$ymin" -v ymax="$ymax" -v mmin="$mmin" -v mmax="$mmax" ' 
+		BEGIN { FS = "," }
+		{ year=substr($5,1,4) ; month=substr($5,6,2); 
+		if (year > ymin) { print $0 } 
+		else if (year == ymin && month >= mmin) { print $0 } }
+		END { OFS = "," } ' < time1.csv > timetemp1.csv
+		awk -v ymino="$ymin" -v ymaxo="$ymax" -v mmino="$mmin" -v mmaxo="$mmax" '
+        	BEGIN { FS = ","}
+		{ year=substr($5,1,4) ; month=substr($5,6,2) ;
+		if (year < ymaxo) { print $0 } 
+		else if (year == ymaxo && month <= mmaxo) { print $0 } }
+        	END { OFS = "," } '< timetemp1.csv >$7
+		rm time1.csv
+		rm timetemp1.csv
+#for stats of get
+	startday="01"
+	endday="15"
+	echo "rowcount,avgconf,avgdeath,avgtests" >> $7
+	while [ $mmin -le $mmax ]; do
+	awk -v sd="$startday" -v ed="$endday" -v ymin="$ymin" -v ymax="$ymax" -v mmin="$mmin" -v mmax="$mmax" '
+        BEGIN { FS = ","; rowcount=0;avgconf=0;avgdeaths=0;avgtests=0 }
+        { day=substr($5,9,2) ; month=substr($5,6,2) ;
+                if (month == mmin && day >= sd && day <= ed) 
+		{ rowcount=1+rowcount;avgconf=avgconf+$6;
+		avgdeaths=avgdeaths+$8;avgtests=avgtests+$11 } }
+	END { OFS = ","; print rowcount,avgconf/rowcount, avgdeaths/rowcount, avgtests/rowcount } '< $7 > getstats.csv
+        if [ $startday -eq "01" ] 
+	then
+		startday="16" 
+		endday="31" 
+	 elif [ $startday -eq "16" ] 
+	 then
+		 startday="01"
+		 endday="15" 
+		 mmin=$(expr $mmin + 1)
+		 if [ ${#mmin} -lt 2 ]
+		 then
+			 mmin=0$mmin
+		 fi
+	 fi
+cat getstats.csv >> $7
+	done
+rm getstats.csv	
+	else
+		errorMsg Input file name does not exist
+	fi
+	########################################
+# for compare test
+	elif [[ $2 == "compare" ]]
+	then
+		if [[ -f $6 ]] 
+		then
+		awk -v p="$3" '
+                BEGIN { FS="," ;rowcount=0;avgconf=0;avgdeaths=0;avgtests=0 }
+                { if ($1 ~ p) { rowcount=rowcount+1;avgconf=avgconf+$6;avgdeaths=avgdeaths+$8;avgtests=avgtests+$11;print $0 } }
+                END { OFS="," } ' < $6 > time2.csv
+t=$4
+f=$5
+                ymin=${t:0:4}
+                mmin=${t:5:2}
+                ymax=${f:0:4}
+                mmax=${f:5:2}
+                awk -v ymin="$ymin" -v ymax="$ymax" -v mmin="$mmin" -v mmax="$mmax" '
+        BEGIN { FS = "," }
+        { year = substr($5,1,4) ; month =substr($5,6,2) ;
+                if (year > ymin) { print $0 } ;
+                if (year == ymin && month >= mmin) { print $0 } }
+        END { OFS = "," } ' < time2.csv > timetemp2.csv
+        awk -v ymin="$ymin" -v ymax="$ymax" -v mmin="$mmin" -v mmax="$mmax" '
+        BEGIN { FS = "," }
+        { year = substr($5,1,4) ; month =substr($5,6,2) ;
+      		if (year < ymax) { print $0 } ;
+                if (year == ymax && month <= mmax) { print $0 } }
+	END { OFS = "," } ' < timetemp2.csv > $7
+cat $7 > fors1.csv
+	#for compfile
+	awk -v p="$3" '
+	BEGIN { FS="," ;rowcount=0;avgconf=0;avgdeaths=0;avgtests=0 }
+                { if (NF != 4) { rowcount=rowcount+1;avgconf=avgconf+$6;avgdeaths=avgdeaths+$8;avgtests=avgtests+$11;print $0 } }
+                END { OFS="," } ' < $8 > time3.csv
+t=$4
+f=$5
+                ymin=${t:0:4}
+                mmin=${t:5:2}
+                ymax=${f:0:4}
+                mmax=${f:5:2}
+                awk -v ymin="$ymin" -v ymax="$ymax" -v mmin="$mmin" -v mmax="$mmax" '
+        BEGIN { FS = "," }
+        { year = substr($5,1,4) ; month =substr($5,6,2) ;
+                if (year > ymin) { print $0 } ;
+                if (year == ymin && month >= mmin) { print $0 } }
+        END { OFS = "," } ' < time3.csv > timetemp3.csv
+        awk -v ymin="$ymin" -v ymax="$ymax" -v mmin="$mmin" -v mmax="$mmax" '
+        BEGIN { FS = "," }
+        { year = substr($5,0,4) ; month =substr($5,6,2) ;
+                if (year < ymax) { print $0 } ;
+                if (year == ymax&&month <= mmax) { print $0 } }
+        END { OFS = "," } ' < timetemp3.csv > fors2.csv
+	cat fors2.csv >> $7
+
+rm time2.csv
+rm timetemp2.csv
+rm time3.csv
+rm timetemp3.csv
+#######################
+#compare statistics
+ startday="01"
+        endday="15"
+        echo "rowcount,avgconf,avgdeath,avgtests" >> $7
+        while [ $mmin -le $mmax ]; do
+        awk -v sd="$startday" -v ed="$endday" -v ymin="$ymin" -v ymax="$ymax" -v mmin="$mmin" -v mmax="$mmax" '
+        BEGIN { FS = ","; rowcount=0;avgconf=0;avgdeaths=0;avgtests=0 }
+        { day=substr($5,9,2) ; month=substr($5,6,2) ;
+                if (month == mmin && day >= sd && day <= ed)
+                { rowcount=1+rowcount;avgconf=avgconf+$6;
+                avgdeaths=avgdeaths+$8;avgtests=avgtests+$11 } }
+        END { OFS = ","; print rowcount,avgconf/rowcount, avgdeaths/rowcount, avgtests/rowcount } '< fors1.csv > getstats1.csv
+        if [ $startday -eq "01" ]
+        then
+                startday="16"
+                endday="31"
+         elif [ $startday -eq "16" ]
+         then
+                 startday="01"
+                 endday="15"
+                 mmin=$(expr $mmin + 1)
+                 if [ ${#mmin} -lt 2 ]
+                 then
+                         mmin=0$mmin
+                 fi
+         fi
+cat getstats1.csv >> $7
+cat getstats1.csv >> min1.csv
+        done
+ Startday="01"
+        Endday="15"
+        echo "rowcount,avgconf,avgdeath,avgtests" >> $7
+        t=$4
+f=$5
+                ymin=${t:0:4}
+                mmin=${t:5:2}
+                ymax=${f:0:4}
+                mmax=${f:5:2}
+	while [ $mmin -le $mmax ]; do
+        awk -v sd="$Startday" -v ed="$Endday" -v ymin="$ymin" -v ymax="$ymax" -v mmin="$mmin" -v mmax="$mmax" '
+        BEGIN { FS = ","; rowcount=0;avgconf=0;avgdeaths=0;avgtests=0 }
+        { day=substr($5,9,2) ; month=substr($5,6,2) ;
+                if (month == mmin && day >= sd && day <= ed)
+                { rowcount=1+rowcount;avgconf=avgconf+$6;
+                avgdeaths=avgdeaths+$8;avgtests=avgtests+$11 } }
+        END { OFS = ","; print rowcount,avgconf/rowcount, avgdeaths/rowcount, avgtests/rowcount } '< fors2.csv > getstats2.csv
+        if [ $Startday -eq "01" ]
+        then
+                Startday="16"
+                Endday="31"
+         elif [ $Startday -eq "16" ]
+         then
+                 Startday="01"
+                 Endday="15"
+                 mmin=$(expr $mmin + 1)
+                 if [ ${#mmin} -lt 2 ]
+                 then
+                         mmin=0$mmin
+                 fi
+         fi
+cat getstats2.csv >> $7
+cat getstats2.csv >> min2.csv
+done
+echo "diffcount,diffavgconf,diffavgdeath,diffavgtests" >> $7
+paste -d, min1.csv min2.csv | awk -F, 'BEGIN {OFS = ","}{ print $1-$5,$2-$6,$3-$7,$4-$8 }' >> $7 
+rm fors1.csv
+rm fors2.csv
+rm getstats1.csv
+rm getstats2.csv
+rm min1.csv
+rm min2.csv
+else		
+errorMsg Input file name does not exist
+		fi
+	
+	fi
+
+fi
